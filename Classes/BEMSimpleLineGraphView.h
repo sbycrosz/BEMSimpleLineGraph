@@ -231,19 +231,8 @@
 
 //----- X AXIS -----//
 
-
-/** The number of free space between labels on the X-axis to avoid overlapping.
- @discussion For example returning '1' would mean that half of the labels on the X-axis are not displayed: the first is not displayed, the second is, the third is not etc. Returning '0' would mean that all of the labels will be displayed. Finally, returning a value equal to the number of labels will only display the first and last label.
- @param graph The graph object which is requesting the number of gaps between the labels.
- @return The number of labels to "jump" between each displayed label on the X-axis. */
-- (NSInteger)numberOfGapsBetweenLabelsOnLineGraph:(BEMSimpleLineGraphView *)graph;
-
-
-/** The string to display on the label on the X-axis at a given index. Please note that the number of strings to be returned should be equal to the number of points in the Graph.
- @param graph The graph object which is requesting the label on the specified X-Axis position.
- @param index The index from left to right of a given label on the X-axis. Is the same index as the one for the points. The first value for the index is 0. */
-- (NSString *)lineGraph:(BEMSimpleLineGraphView *)graph labelOnXAxisForIndex:(NSInteger)index;
-
+- (NSDictionary*) xLabelsForLineGraph:(BEMSimpleLineGraphView *)graph;
+- (NSDictionary*) yLabelsForLineGraph:(BEMSimpleLineGraphView *)graph;
 
 //----- DEPRECATED -----//
 

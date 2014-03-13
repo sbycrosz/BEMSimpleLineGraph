@@ -15,7 +15,6 @@
 #endif
 
 #define SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(v)  ([[[UIDevice currentDevice] systemVersion] compare:v options:NSNumericSearch] != NSOrderedAscending)
-#define padding 80
 #define circleSize 10
 #define labelXaxisOffset 10
 
@@ -33,6 +32,7 @@
     
     /// All of the Data Points
     NSMutableArray *dataPoints;
+    
 }
 
 /// The vertical line which appears when the user drags across the graph
@@ -40,6 +40,11 @@
 
 /// The animation delegate for lines and dots
 @property (strong, nonatomic) BEMAnimations *animationDelegate;
+
+@property (strong, nonatomic) UIView *graphContainer;
+@property (strong, nonatomic) UIView *xLabelsContainer;
+@property (strong, nonatomic) UIView *yLabelsContainer;
+@property (strong, nonatomic) UIView *lineContainer;
 
 /// Find which dot is currently the closest to the vertical line
 - (BEMCircle *)closestDotFromVerticalLine:(UIView *)verticalLine;
@@ -107,6 +112,22 @@
     // Initialize the arrays
     xAxisValues = [NSMutableArray array];
     dataPoints = [NSMutableArray array];
+    
+    _xLabelsContainer = [[UIView alloc] init];
+    _xLabelsContainer.backgroundColor = [UIColor whiteColor];
+    [self addSubview:_xLabelsContainer];
+    
+    _lineContainer = [[UIView alloc] init];
+    _lineContainer.backgroundColor = [UIColor clearColor];
+    [self addSubview:_lineContainer];
+    
+    _graphContainer = [[UIView alloc] init];
+    _graphContainer.backgroundColor = [UIColor clearColor];
+    [self addSubview:_graphContainer];
+    
+    _yLabelsContainer = [[UIView alloc] init];
+    _yLabelsContainer.backgroundColor = [UIColor clearColor];
+    [self addSubview:_yLabelsContainer];
 }
 
 - (void)layoutSubviews {
@@ -130,11 +151,23 @@
         
     } else numberOfPoints = 0;
     
+    [self drawXLabel];
+    [self drawYLabel];
+    
+    _lineContainer.frame = self.frame;
+    for (UIView *subview in [_lineContainer subviews]) {
+        [subview removeFromSuperview];
+    }
+
+    [self drawXLines];
+    [self drawYLines];
+    
+    CGRect frame = self.frame;
+    frame.size.height -= CGRectGetHeight(_xLabelsContainer.frame);
+    _graphContainer.frame = frame;
     // Draw the graph
     [self drawGraph];
     
-    // Draw the X-Axis
-    [self drawXAxis];
     
     // If the touch report is enabled, set it up
     if (self.enableTouchReport == YES) {
@@ -166,16 +199,71 @@
         BEMCircle *circleDot = [[BEMCircle alloc] initWithFrame:CGRectMake(0, 0, circleSize, circleSize)];
         circleDot.center = CGPointMake(self.frame.size.width/2, self.frame.size.height/2);
         circleDot.alpha = 0.7;
-        [self addSubview:circleDot];
+        [_graphContainer addSubview:circleDot];
         
         return;
     }
-    
+
     // CREATION OF THE DOTS
     [self drawDots];
     
     // CREATION OF THE LINE AND BOTTOM AND TOP FILL
     [self drawLines];
+}
+
+- (void)drawXLines
+{
+    if ([self.delegate respondsToSelector:@selector(xLabelsForLineGraph:)]) {
+        NSDictionary *xLabels = [self.delegate xLabelsForLineGraph:self];
+        
+        _xLabelsContainer.frame = CGRectMake(0, self.frame.size.height-20, self.frame.size.width, 20);
+        
+        [xLabels enumerateKeysAndObjectsUsingBlock:^(id key, id value, BOOL *stop) {
+            NSInteger index = [(NSNumber*)key integerValue];
+            CGFloat positionOnXAxis  = [self calculateXPosition:index];
+            
+            UIView *line = [[UIView alloc] initWithFrame:CGRectMake(positionOnXAxis, 0, 0.5, self.frame.size.height - _xLabelsContainer.frame.size.height * 0.4)];
+            line.backgroundColor = [UIColor colorWithWhite:0.8 alpha:1];
+            [_lineContainer addSubview:line];
+        }];
+    }
+    
+}
+
+- (void)drawYLines
+{
+    if ([self.delegate respondsToSelector:@selector(xLabelsForLineGraph:)]) {
+        NSDictionary *yLabels = [self.delegate yLabelsForLineGraph:self];
+        
+        _yLabelsContainer.frame = CGRectMake(self.frame.size.width-30, 0, 30, self.frame.size.height);
+        
+        [yLabels enumerateKeysAndObjectsUsingBlock:^(id yValue, id label, BOOL *stop) {
+            CGFloat value = [(NSNumber*)yValue floatValue];
+            
+            CGFloat positionOnYAxis = [self calculateYPosition: value];
+            
+            UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, positionOnYAxis, self.frame.size.width, 0.5)];
+            line.backgroundColor = [UIColor colorWithWhite:0.8 alpha:1];
+            [_lineContainer addSubview:line];
+        }];
+    }
+}
+
+- (CGFloat) calculateXPosition:(NSInteger)index
+{
+    return (self.frame.size.width/(numberOfPoints - 1)) * index;
+}
+
+- (CGFloat) calculateYPosition:(CGFloat)value
+{
+    CGFloat maxValue = [self maxValue]; // Biggest Y-axis value from all the points.
+    CGFloat minValue = [self minValue]; // Smallest Y-axis value from all the points.
+    
+    CGFloat bottomPadding = CGRectGetHeight(_xLabelsContainer.frame);
+    CGFloat topPadding = bottomPadding;
+    
+    CGFloat graphHeight = self.frame.size.height - bottomPadding - topPadding;
+    return graphHeight - ((value - minValue) / (maxValue - minValue) * graphHeight) + topPadding;
 }
 
 - (void)drawDots {
@@ -186,7 +274,7 @@
     CGFloat positionOnYAxis; // The position on the Y-axis of the point currently being created.
     
     // Remove all dots that were previously on the graph
-    for (UIView *subview in [self subviews]) {
+    for (UIView *subview in [_graphContainer subviews]) {
         if ([subview isKindOfClass:[BEMCircle class]])
             [subview removeFromSuperview];
     }
@@ -214,16 +302,16 @@
             
             [dataPoints addObject:[NSNumber numberWithFloat:dotValue]];
             
-            positionOnXAxis = (self.frame.size.width/(numberOfPoints - 1))*i;
+            positionOnXAxis = [self calculateXPosition:i];
             if (minValue == maxValue) positionOnYAxis = self.frame.size.height/2;
-            else positionOnYAxis = (self.frame.size.height - padding) - ((dotValue - minValue) / ((maxValue - minValue) / (self.frame.size.height - padding))) + 30;
+            else positionOnYAxis = [self calculateYPosition:dotValue];
             
             BEMCircle *circleDot = [[BEMCircle alloc] initWithFrame:CGRectMake(0, 0, circleSize, circleSize)];
             circleDot.center = CGPointMake(positionOnXAxis, positionOnYAxis);
             circleDot.tag = i+100;
             circleDot.alpha = 0;
             
-            [self addSubview:circleDot];
+            [_graphContainer addSubview:circleDot];
             
             [self.animationDelegate animationForDot:i circleDot:circleDot animationSpeed:self.animationGraphEntranceSpeed];
         }
@@ -242,14 +330,14 @@
     CGFloat xDot3; // Postion on the X-axis of the next dot.
     CGFloat yDot3; // Postion on the Y-axis of the next dot.
     
-    for (UIView *subview in [self subviews]) {
+    for (UIView *subview in [_graphContainer subviews]) {
         if ([subview isKindOfClass:[BEMLine class]])
             [subview removeFromSuperview];
     }
     
     @autoreleasepool {
         for (int i = 0; i < numberOfPoints; i++) {
-            for (UIView *dot in [self.viewForBaselineLayout subviews]) {
+            for (UIView *dot in [_graphContainer.viewForBaselineLayout subviews]) {
                 if (dot.tag == i + 100)  {
                     xDot1 = dot.center.x;
                     yDot1 = dot.center.y;
@@ -265,7 +353,7 @@
                 }
             }
             
-            BEMLine *line = [[BEMLine alloc] initWithFrame:CGRectMake(0, 0, self.viewForBaselineLayout.frame.size.width, self.viewForBaselineLayout.frame.size.height)];
+            BEMLine *line = [[BEMLine alloc] initWithFrame:CGRectMake(0, 0, _graphContainer.viewForBaselineLayout.frame.size.width, _graphContainer.viewForBaselineLayout.frame.size.height)];
             line.opaque = NO;
             line.tag = i + 1000;
             line.alpha = 0;
@@ -286,110 +374,67 @@
             else line.lineAlpha = self.alphaLine;
             line.lineWidth = self.widthLine;
             line.bezierCurveIsEnabled = self.enableBezierCurve;
-            [self addSubview:line];
-            [self sendSubviewToBack:line];
+            [_graphContainer addSubview:line];
+            [_graphContainer sendSubviewToBack:line];
             
             [self.animationDelegate animationForLine:i line:line animationSpeed:self.animationGraphEntranceSpeed];
         }
     }
 }
 
-- (void)drawXAxis {
-    if ((![self.delegate respondsToSelector:@selector(numberOfGapsBetweenLabelsOnLineGraph:)]) && (![self.delegate respondsToSelector:@selector(numberOfGapsBetweenLabels)])) return;
-    
-    for (UIView *subview in [self subviews]) {
-        if ([subview isKindOfClass:[UILabel class]])
-            [subview removeFromSuperview];
+- (void)drawXLabel
+{
+    for (UIView *subview in [_xLabelsContainer subviews]) {
+        [subview removeFromSuperview];
     }
     
-    NSInteger numberOfGaps = 0;
-    
-    if ([self.delegate respondsToSelector:@selector(numberOfGapsBetweenLabelsOnLineGraph:)]) {
-        numberOfGaps = [self.delegate numberOfGapsBetweenLabelsOnLineGraph:self] + 1;
+    if ([self.delegate respondsToSelector:@selector(xLabelsForLineGraph:)]) {
+        NSDictionary *xLabels = [self.delegate xLabelsForLineGraph:self];
+
+        _xLabelsContainer.frame = CGRectMake(0, self.frame.size.height-20, self.frame.size.width, 20);
         
-    } else if ([self.delegate respondsToSelector:@selector(numberOfGapsBetweenLabels)]) {
-        [self printDeprecationWarningForOldMethod:@"numberOfGapsBetweenLabels" andReplacementMethod:@"numberOfGapsBetweenLabelsOnLineGraph:"];
-        
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        numberOfGaps = [self.delegate numberOfGapsBetweenLabels] + 1;
-#pragma clang diagnostic pop
-        
-    } else numberOfGaps = 0;
-    
-    // Remove all X-Axis Labels before adding them to the array
-    [xAxisValues removeAllObjects];
-    
-    if (numberOfGaps >= (numberOfPoints - 1)) {
-        NSString *firstXLabel = @"";
-        NSString *lastXLabel = @"";
-        
-        if ([self.delegate respondsToSelector:@selector(lineGraph:labelOnXAxisForIndex:)]) {
-            firstXLabel = [self.delegate lineGraph:self labelOnXAxisForIndex:0];
-            lastXLabel = [self.delegate lineGraph:self labelOnXAxisForIndex:(numberOfPoints - 1)];
+        [xLabels enumerateKeysAndObjectsUsingBlock:^(id key, id value, BOOL *stop) {
+            NSInteger index = [(NSNumber*)key integerValue];
+            NSString *label = (NSString*) value;
             
-        } else if ([self.delegate respondsToSelector:@selector(labelOnXAxisForIndex:)]) {
-            [self printDeprecationWarningForOldMethod:@"labelOnXAxisForIndex:" andReplacementMethod:@"lineGraph:labelOnXAxisForIndex:"];
+            CGFloat positionOnXAxis = [self calculateXPosition:index];
+            UILabel *xLabel = [[UILabel alloc] initWithFrame:CGRectMake(positionOnXAxis+5, 0, 30, 20)];
+            xLabel.text = label;
+            xLabel.textColor = [UIColor blackColor];
+            xLabel.font = [UIFont systemFontOfSize:7.5];
+            [_xLabelsContainer addSubview:xLabel];
+
+        }];
+    }
+}
+
+- (void)drawYLabel
+{
+    for (UIView *subview in [_yLabelsContainer subviews]) {
+        [subview removeFromSuperview];
+    }
+    
+    if ([self.delegate respondsToSelector:@selector(yLabelsForLineGraph:)]) {
+        NSDictionary *yLabels = [self.delegate yLabelsForLineGraph:self];
+        
+         _yLabelsContainer.frame = CGRectMake(self.frame.size.width-30, 0, 30, self.frame.size.height);
+        
+        [yLabels enumerateKeysAndObjectsUsingBlock:^(id yValue, id label, BOOL *stop) {
+            CGFloat value = [(NSNumber*)yValue floatValue];
+            NSString *labelString = (NSString*) label;
             
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            firstXLabel = [self.delegate labelOnXAxisForIndex:0];
-            lastXLabel = [self.delegate labelOnXAxisForIndex:(numberOfPoints - 1)];
-#pragma clang diagnostic pop
+            CGFloat positionOnYAxis = [self calculateYPosition: value];
             
-        } else firstXLabel = @"";
-        
-        UILabel *firstLabel = [[UILabel alloc] initWithFrame:CGRectMake(3, self.frame.size.height - (labelXaxisOffset + 10), self.frame.size.width/2, 20)];
-        firstLabel.text = firstXLabel;
-        firstLabel.font = self.labelFont;
-        firstLabel.textAlignment = 0;
-        firstLabel.textColor = self.colorXaxisLabel;
-        firstLabel.backgroundColor = [UIColor clearColor];
-        [self addSubview:firstLabel];
-        [xAxisValues addObject:firstXLabel];
-        
-        UILabel *lastLabel = [[UILabel alloc] initWithFrame:CGRectMake(self.frame.size.width/2 - 3, self.frame.size.height - (labelXaxisOffset + 10), self.frame.size.width/2, 20)];
-        lastLabel.text = lastXLabel;
-        lastLabel.font = self.labelFont;
-        lastLabel.textAlignment = 2;
-        lastLabel.textColor = self.colorXaxisLabel;
-        lastLabel.backgroundColor = [UIColor clearColor];
-        [self addSubview:lastLabel];
-        [xAxisValues addObject:lastXLabel];
-        
-    } else {
-        NSInteger offset = [self offsetForXAxisWithNumberOfGaps:numberOfGaps]; // The offset (if possible and necessary) used to shift the Labels on the X-Axis for them to be centered.
-        
-        @autoreleasepool {
-            for (int i = 1; i <= (numberOfPoints/numberOfGaps); i++) {
-                NSString *xAxisLabel = @"";
-                
-                if ([self.delegate respondsToSelector:@selector(lineGraph:labelOnXAxisForIndex:)]) {
-                    NSInteger index = i * numberOfGaps - 1 - offset;
-                    xAxisLabel = [self.delegate lineGraph:self labelOnXAxisForIndex:index];
-                    
-                } else if ([self.delegate respondsToSelector:@selector(labelOnXAxisForIndex:)]) {
-                    [self printDeprecationWarningForOldMethod:@"labelOnXAxisForIndex:" andReplacementMethod:@"lineGraph:labelOnXAxisForIndex:"];
-                    
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                    xAxisLabel = [self.delegate labelOnXAxisForIndex:(i * numberOfGaps - 1 - offset)];
-#pragma clang diagnostic pop
-                    
-                } else xAxisLabel = @"";
-                
-                UILabel *labelXAxis = [[UILabel alloc] init];
-                labelXAxis.text = xAxisLabel;
-                [labelXAxis sizeToFit];
-                [labelXAxis setCenter:CGPointMake((self.viewForBaselineLayout.frame.size.width/(numberOfPoints-1))*(i*numberOfGaps - 1 - offset), self.frame.size.height - labelXaxisOffset)];
-                labelXAxis.font = self.labelFont;
-                labelXAxis.textAlignment = 1;
-                labelXAxis.textColor = self.colorXaxisLabel;
-                labelXAxis.backgroundColor = [UIColor clearColor];
-                [self addSubview:labelXAxis];
-                [xAxisValues addObject:xAxisLabel];
-            }
-        }
+            UILabel *yLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, positionOnYAxis-10, 30, 10)];
+            
+            yLabel.text = labelString;
+            yLabel.textColor = [UIColor blackColor];
+            yLabel.font = [UIFont boldSystemFontOfSize:7.5];
+            yLabel.textAlignment = NSTextAlignmentLeft;
+            
+            [_yLabelsContainer addSubview:yLabel];
+            
+        }];
     }
 }
 
@@ -586,35 +631,12 @@
             }
         }
     }
-    return maxValue;
+    
+    return ((int) maxValue/ 1000 + 1) *1000;
 }
 
 - (CGFloat)minValue {
-    CGFloat dotValue;
-    CGFloat minValue = INFINITY;
-    
-    @autoreleasepool {
-        for (int i = 0; i < numberOfPoints; i++) {
-            if ([self.delegate respondsToSelector:@selector(lineGraph:valueForPointAtIndex:)]) {
-                dotValue = [self.delegate lineGraph:self valueForPointAtIndex:i];
-                
-            } else if ([self.delegate respondsToSelector:@selector(valueForIndex:)]) {
-                [self printDeprecationWarningForOldMethod:@"valueForIndex:" andReplacementMethod:@"lineGraph:valueForPointAtIndex:"];
-                
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                dotValue = [self.delegate valueForIndex:i];
-#pragma clang diagnostic pop
-                
-            } else dotValue = 0;
-            
-            if (dotValue < minValue) {
-                minValue = dotValue;
-            }
-        }
-    }
-    
-    return minValue;
+    return 0;
 }
 
 #pragma mark - Other Methods
